@@ -25,9 +25,19 @@ void DCF77Emitter::setup_timer_() {
   global_dcf77_emitter_instance = this;
   
   // Setup ESP32 hardware timer
-  this->timer_ = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1μs resolution), count up
-  timerAttachInterrupt(this->timer_, &timer_callback, true);
-  timerAlarmWrite(this->timer_, 100000, true); // 100ms interval, auto-reload
+//  this->timer_ = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1μs resolution), count up
+//  timerAttachInterrupt(this->timer_, &timer_callback, true);
+//  timerAlarmWrite(this->timer_, 100000, true); // 100ms interval, auto-reload
+  // 1,000,000 Hz = 1MHz frequency (provides a 1μs tick resolution)
+  this->timer_ = timerBegin(1000000); 
+  
+  // The older edge-trigger boolean parameter is removed
+  timerAttachInterrupt(this->timer_, &timer_callback); 
+  
+  // timerAlarmWrite and timerAlarmEnable are now combined into timerAlarm
+  // 100,000 ticks at 1MHz = 100ms interval. true = auto-reload. 0 = unlimited count
+  timerAlarm(this->timer_, 100000, true, 0); 
+
   timerAlarmEnable(this->timer_);
   ESP_LOGD(TAG, "ESP32 hardware timer configured");
 #elif defined(USE_ESP8266)
@@ -48,7 +58,9 @@ void DCF77Emitter::setup() {
   // Configure PWM for the DCF77 signal (77.5 kHz)
 #ifdef USE_ESP32
   ledcSetup(this->pwm_channel_, 77500, 8); // 77.5 kHz, 8-bit resolution
-  ledcAttachPin(this->antenna_pin_->get_pin(), this->pwm_channel_);
+  //ledcAttachPin(this->antenna_pin_->get_pin(), this->pwm_channel_);
+  // Attaches the GPIO pin directly, specifying frequency (77.5 kHz) and resolution (8-bit)
+  ledcAttach(this->antenna_pin_->get_pin(), 77500, 8);
   ledcWrite(this->pwm_channel_, 0);
 #elif defined(USE_ESP8266)
   analogWriteFreq(77500);  // ESP8266 can't precisely do 77.5kHz but will get close
@@ -116,7 +128,8 @@ void DCF77Emitter::loop() {
     
     // Check if the second has changed - this indicates we're at a second boundary
     if (current_time.second != this->last_second_) {
-      ESP_LOGI(TAG, "Second transition detected after %u ms", millis() - this->sync_start_millis_);
+      //ESP_LOGI(TAG, "Second transition detected after %u ms", millis() - this->sync_start_millis_);
+      ESP_LOGI(TAG, "Second transition detected after %lu ms", (unsigned long)(millis() - this->sync_start_millis_);
       
       // Initialize impulse array and start scheduling ticks
       code_time_();
@@ -188,7 +201,8 @@ void DCF77Emitter::schedule_next_tick_() {
       this->timing_drift_ms_ += drift;
     } else {
       // Log significant timing issues
-      ESP_LOGW(TAG, "Abnormal timing drift detected: %dms", drift);
+      //ESP_LOGW(TAG, "Abnormal timing drift detected: %dms", drift);
+      ESP_LOGW(TAG, "Abnormal timing drift detected: %ldms", (long)drift);
     }
   }
   
@@ -201,14 +215,17 @@ void DCF77Emitter::schedule_next_tick_() {
   // Apply drift compensation if needed
   if (abs(this->timing_drift_ms_) > 5) {
     // Limit correction to reasonable bounds (70-130ms)
-    int32_t correction = min(max(this->timing_drift_ms_, -30), 30);
+    //int32_t correction = min(max(this->timing_drift_ms_, -30), 30);
+    int32_t correction = std::min(std::max(this->timing_drift_ms_, (int32_t)-30), (int32_t)30);
     next_interval -= correction;
     this->timing_drift_ms_ -= correction;
     
     this->consecutive_drift_corrections_++;
     if (this->consecutive_drift_corrections_ % 10 == 0) {
-      ESP_LOGD(TAG, "Drift compensation: %dms correction, %dms remaining drift", 
-               correction, this->timing_drift_ms_);
+      //ESP_LOGD(TAG, "Drift compensation: %dms correction, %dms remaining drift", 
+      //        correction, this->timing_drift_ms_);
+      ESP_LOGD(TAG, "Drift compensation: %ldms correction, %dms remaining drift", 
+         correction, (long)correction and (long)this->timing_drift_ms_);
     }
   } else {
     this->consecutive_drift_corrections_ = 0;
