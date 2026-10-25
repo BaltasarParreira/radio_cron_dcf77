@@ -57,11 +57,11 @@ void DCF77Emitter::setup() {
   
   // Configure PWM for the DCF77 signal (77.5 kHz)
 #ifdef USE_ESP32
-  //ledcSetup(this->pwm_channel_, 77500, 8); // 77.5 kHz, 8-bit resolution
-  //ledcAttachPin(this->antenna_pin_->get_pin(), this->pwm_channel_);
   // Attaches the GPIO pin directly, specifying frequency (77.5 kHz) and resolution (8-bit)
   ledcAttach(this->antenna_pin_->get_pin(), 77500, 8);
-  ledcWrite(this->pwm_channel_, 0);
+  
+  // Core 3.0+ Fix: Pass the GPIO pin number instead of the old channel ID
+  ledcWrite(this->antenna_pin_->get_pin(), 0);
 #elif defined(USE_ESP8266)
   analogWriteFreq(77500);  // ESP8266 can't precisely do 77.5kHz but will get close
   analogWrite(this->antenna_pin_->get_pin(), 0);
@@ -78,21 +78,22 @@ void DCF77Emitter::setup() {
   }
 
 #ifdef USE_ESP32
-  // For more precise initial synchronization
+  // Safe Core 3.0+ Initial Sync: Use yield/delay to feed the hardware Watchdog
   int sync_count = 0;
   int start_second = time.second;
   
-  // More aggressive sync for startup only (safe because it's just once)
-  while (sync_count < 1000) { // Safety limit
+  while (sync_count < 1000) { 
     sync_count++;
     time = this->time_id_->now();
-    if (!time.is_valid()) continue;
+    if (!time.is_valid()) {
+      delay(1); // Feeds the watchdog if time object isn't ready yet
+      continue;
+    }
     if (time.second != start_second) {
-      // Exact second boundary detected!
       ESP_LOGI(TAG, "Precise second boundary detected after %d checks", sync_count);
       break;
     }
-    delayMicroseconds(500); // Much shorter delay for more precise detection
+    delay(1); // Standard 1ms delay allows the background SDK tasks to process safely
   }
 #endif
   
@@ -101,8 +102,12 @@ void DCF77Emitter::setup() {
   this->timing_drift_ms_ = 0;
   this->last_sync_millis_ = millis();
   
+  // CRUCIAL: Fire up your hardware clock timer as the final initialization step
+  this->setup_timer_();
+  
   ESP_LOGI(TAG, "DCF77 Emitter setup complete. Waiting for sync.");
 }
+
 
 void DCF77Emitter::loop() {
   // Handle sync switch state changes
