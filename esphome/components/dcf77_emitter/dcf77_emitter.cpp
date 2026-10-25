@@ -38,7 +38,7 @@ void DCF77Emitter::setup_timer_() {
   // 100,000 ticks at 1MHz = 100ms interval. true = auto-reload. 0 = unlimited count
   timerAlarm(this->timer_, 100000, true, 0); 
 
-  timerAlarmEnable(this->timer_);
+  //timerAlarmEnable(this->timer_);
   ESP_LOGD(TAG, "ESP32 hardware timer configured");
 #elif defined(USE_ESP8266)
   // Setup ESP8266 ticker timer
@@ -57,7 +57,7 @@ void DCF77Emitter::setup() {
   
   // Configure PWM for the DCF77 signal (77.5 kHz)
 #ifdef USE_ESP32
-  ledcSetup(this->pwm_channel_, 77500, 8); // 77.5 kHz, 8-bit resolution
+  //ledcSetup(this->pwm_channel_, 77500, 8); // 77.5 kHz, 8-bit resolution
   //ledcAttachPin(this->antenna_pin_->get_pin(), this->pwm_channel_);
   // Attaches the GPIO pin directly, specifying frequency (77.5 kHz) and resolution (8-bit)
   ledcAttach(this->antenna_pin_->get_pin(), 77500, 8);
@@ -129,7 +129,8 @@ void DCF77Emitter::loop() {
     // Check if the second has changed - this indicates we're at a second boundary
     if (current_time.second != this->last_second_) {
       //ESP_LOGI(TAG, "Second transition detected after %u ms", millis() - this->sync_start_millis_);
-      ESP_LOGI(TAG, "Second transition detected after %lu ms", (unsigned long)(millis() - this->sync_start_millis_);
+      ESP_LOGI(TAG, "Second transition detected after %lu ms", (unsigned long)(millis() - this->sync_start_millis_));
+
       
       // Initialize impulse array and start scheduling ticks
       code_time_();
