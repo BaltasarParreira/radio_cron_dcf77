@@ -16,6 +16,7 @@ https://github.com/BaltasarParreira/radio_cron_dcf77/tree/main/esphome/component
 
 This is my YAML recommendation to use them locally on your esphome path:
 
+(For Arduino framework)
 ```yaml
 esp32:
   # For ESP32-S3
@@ -23,8 +24,7 @@ esp32:
   # For ESP32-C3 super mini
   #board: esp32-c3-devkitm-1
   framework:
-    #type: arduino
-    type: esp-idf
+    type: arduino
 
 # Required: NTP time source
 time:
@@ -37,10 +37,7 @@ external_components:
       type: local
       path: /config/esphome/my_components
 
-# For Framework type: arduino
-#dcf77_emitter:
-# For Framework type: esp-idf
-idf_dcf77_emitter:
+dcf77_emitter:
   time_id: sntp_time
   # For ESP32-S3
   antenna_pin: GPIO18
@@ -55,7 +52,56 @@ switch:
     name: "DCF77 Sync"
     id: dcf77_sync_switch
     optimistic: true
-    restore_mode: ALWAYS_ON
+    restore_mode: ALWAYS_OFF
+```
+
+(For ESP-IDF framework)
+```yaml
+esp32:
+  # For ESP32-S3
+  board: esp32-s3-devkitc-1
+  # For ESP32-C3 super mini
+  #board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+# Required: NTP time source
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Lisbon
+
+external_components:
+  - source:
+      type: local
+      path: /config/esphome/my_components
+
+output:
+  - platform: ledc
+    id: dcf77_carrier
+    # For ESP32-S3
+    pin: GPIO18
+    # For ESP32-C3 super mini
+    #pin: GPIO4
+    frequency: 77500 Hz
+      
+idf_dcf77_emitter:
+  time_id: sntp_time
+  carrier_output: dcf77_carrier
+  # For ESP32-S3
+  led_pin: GPIO48
+  # For ESP32-C3 super mini
+  #led_pin:
+  #  number: GPIO8  # Internal board LED
+  #  inverted: true
+  sync_switch_id: dcf77_sync_switch
+
+switch:
+  - platform: template
+    name: "DCF77 Sync"
+    id: dcf77_sync_switch
+    optimistic: true
+    restore_mode: ALWAYS_OFF
 ```
 
 Just create on you local esphome folder a new sunfolder named "my_components" or whatever name you want as long you change to that exact same name on the "external_components:" tag.
