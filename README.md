@@ -14,6 +14,7 @@ Monday=1 ... Saturday=6, Sunday=7
 Additionally I create a new working component for using the modern ESP-IDF framework here: 
 https://github.com/BaltasarParreira/radio_cron_dcf77/tree/main/esphome/components/idf_dcf77_emitter
 
+
 This is my YAML recommendation to use them locally on your esphome path:
 
 (For Arduino framework)
