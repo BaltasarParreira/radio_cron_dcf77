@@ -1,3 +1,55 @@
+This is my fork from @sst1xx/radio_cron_dcf77
+I fixed the original code so it compiles on the new ESPHome that only accpets the Arduino core 3.0 framework.
+
+Additionally I create a new working component for using the modern ESP-IDF framework here: 
+https://github.com/BaltasarParreira/radio_cron_dcf77/tree/main/esphome/components/idf_dcf77_emitter
+
+This my YAML recommendation to use them locally on your esphome path:
+
+```yaml
+esp32:
+  # For ESP32-S3
+  board: esp32-s3-devkitc-1
+  # For ESP32-C3 super mini
+  #board: esp32-c3-devkitm-1
+  framework:
+    #type: arduino
+    type: esp-idf
+
+# Required: NTP time source
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Lisbon
+
+external_components:
+  - source:
+      type: local
+      path: /config/esphome/my_components
+
+# For Framework type: arduino
+#dcf77_emitter:
+# For Framework type: esp-idf
+idf_dcf77_emitter:
+  time_id: sntp_time
+  # For ESP32-S3
+  antenna_pin: GPIO18
+  led_pin: GPIO48
+  # For ESP32-C3 super mini
+  #antenna_pin: GPIO4
+  #led_pin: GPIO5
+  sync_switch_id: dcf77_sync_switch
+
+switch:
+  - platform: template
+    name: "DCF77 Sync"
+    id: dcf77_sync_switch
+    optimistic: true
+    restore_mode: ALWAYS_ON
+```
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sst1xx/radio_cron_dcf77)
 # DCF77 Transmitter for ESP32 and ESPHome Component
 
