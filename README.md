@@ -5,7 +5,7 @@ I fixed the original code so it compiles on the new ESPHome that only accpets th
 Additionally I create a new working component for using the modern ESP-IDF framework here: 
 https://github.com/BaltasarParreira/radio_cron_dcf77/tree/main/esphome/components/idf_dcf77_emitter
 
-This my YAML recommendation to use them locally on your esphome path:
+This is my YAML recommendation to use them locally on your esphome path:
 
 ```yaml
 esp32:
