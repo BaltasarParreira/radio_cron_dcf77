@@ -8,7 +8,7 @@
 // Platform-specific includes
 #ifdef USE_ESP32
 #include <Arduino.h>
-#include <esp32-hal-timer.h>
+//#include <esp32-hal-timer.h>
 #elif defined(USE_ESP8266)
 #include <Arduino.h>
 #include <Ticker.h>
@@ -72,7 +72,7 @@ class DCF77Emitter : public Component {
   uint16_t consecutive_drift_corrections_ = 0;
 
 #ifdef USE_ESP32  
-  hw_timer_t *timer_ = nullptr;
+  //hw_timer_t *timer_ = nullptr;
 #elif defined(USE_ESP8266)
   Ticker ticker_;
 #endif
