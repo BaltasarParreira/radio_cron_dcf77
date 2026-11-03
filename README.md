@@ -1,7 +1,7 @@
 This is my fork from @sst1xx/radio_cron_dcf77.
 
 I fixed the original code so it compiles on the new ESPHome that only acepts the Arduino core 3.0 framework.
-Even after compiling there was a bug in the way weekday was sent on the signal that since it's not a valid date and most of the clocks could reject and so not syncing because of this.
+Even after compiling there was a bug in the way weekday was sent on the signal that since it's not a valid date most of the clocks could reject and so not syncing because of this.
 
 Details:
 ```yaml
