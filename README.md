@@ -1,6 +1,6 @@
 This is my fork from @sst1xx/radio_cron_dcf77.
 
-I fixed the original code so it compiles on the new ESPHome that only accpets the Arduino core 3.0 framework.
+I fixed the original code so it compiles on the new ESPHome that only acepts the Arduino core 3.0 framework.
 
 Additionally I create a new working component for using the modern ESP-IDF framework here: 
 https://github.com/BaltasarParreira/radio_cron_dcf77/tree/main/esphome/components/idf_dcf77_emitter
@@ -48,6 +48,8 @@ switch:
     optimistic: true
     restore_mode: ALWAYS_ON
 ```
+
+Just create on you local esphome folder a new sunfolder named "my_components" or whatever name you want as long you change to that exact same name on the "external_components:" tag.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
