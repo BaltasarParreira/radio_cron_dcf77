@@ -1,10 +1,11 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
-from esphome.components import time, switch
+from esphome.components import time, switch, output
 from esphome.const import CONF_ID, CONF_TIME_ID
 
 DEPENDENCIES = ["time"]
+AUTO_LOAD = ["ledc"]
 MULTI_CONF = True
 
 idf_dcf77_emitter_ns = cg.esphome_ns.namespace("idf_dcf77_emitter")
@@ -14,7 +15,7 @@ IDFDCF77Emitter = idf_dcf77_emitter_ns.class_(
     cg.Component
 )
 
-CONF_ANTENNA_PIN = "antenna_pin"
+CONF_CARRIER_OUTPUT = "carrier_output"
 CONF_LED_PIN = "led_pin"
 CONF_SYNC_SWITCH_ID = "sync_switch_id"
 
@@ -24,8 +25,8 @@ CONFIG_SCHEMA = cv.Schema({
     cv.Required(CONF_TIME_ID):
         cv.use_id(time.RealTimeClock),
 
-    cv.Required(CONF_ANTENNA_PIN):
-        pins.gpio_output_pin_schema,
+    cv.Required(CONF_CARRIER_OUTPUT):
+        cv.use_id(output.FloatOutput),
 
     cv.Required(CONF_LED_PIN):
         pins.gpio_output_pin_schema,
@@ -44,10 +45,10 @@ async def to_code(config):
     time_ = await cg.get_variable(config[CONF_TIME_ID])
     cg.add(var.set_time_id(time_))
 
-    antenna_pin = await cg.gpio_pin_expression(
-        config[CONF_ANTENNA_PIN]
+    carrier_output = await cg.get_variable(
+        config[CONF_CARRIER_OUTPUT]
     )
-    cg.add(var.set_antenna_pin(antenna_pin))
+    cg.add(var.set_carrier_output(carrier_output))
 
     led_pin = await cg.gpio_pin_expression(
         config[CONF_LED_PIN]
