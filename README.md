@@ -1,7 +1,15 @@
 This is my fork from @sst1xx/radio_cron_dcf77.
 
 I fixed the original code so it compiles on the new ESPHome that only acepts the Arduino core 3.0 framework.
+Even after compiling there was a bug in the way weekday was sent on the signal that since it's not a valid date and most of the clocks could reject and so not syncing because of this.
+Details:
+``
+ESPHome:
+Sunday=1, Monday=2 ... Saturday=7
 
+DCF77 signal expects:
+Monday=1 ... Saturday=6, Sunday=7
+``
 Additionally I create a new working component for using the modern ESP-IDF framework here: 
 https://github.com/BaltasarParreira/radio_cron_dcf77/tree/main/esphome/components/idf_dcf77_emitter
 
