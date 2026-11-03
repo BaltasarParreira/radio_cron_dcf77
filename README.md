@@ -47,7 +47,7 @@ idf_dcf77_emitter:
   led_pin: GPIO48
   # For ESP32-C3 super mini
   #antenna_pin: GPIO4
-  #led_pin: GPIO5
+  #led_pin: GPIO8
   sync_switch_id: dcf77_sync_switch
 
 switch:
