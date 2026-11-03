@@ -8,43 +8,8 @@ namespace dcf77_emitter {
 
 static const char *TAG = "dcf77_emitter";
 
-// For ESP32 timer: we need a global pointer to our instance to handle the callback
-#ifdef USE_ESP32
-static DCF77Emitter* global_dcf77_emitter_instance = nullptr;
-
-IRAM_ATTR void timer_callback() {
-  if (global_dcf77_emitter_instance) {
-    global_dcf77_emitter_instance->dcf_out_tick();
-  }
-}
-#endif
-
 void DCF77Emitter::setup_timer_() {
-#ifdef USE_ESP32
-  // Store global instance pointer for the timer callback
-  global_dcf77_emitter_instance = this;
-  
-  // Setup ESP32 hardware timer
-//  this->timer_ = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1μs resolution), count up
-//  timerAttachInterrupt(this->timer_, &timer_callback, true);
-//  timerAlarmWrite(this->timer_, 100000, true); // 100ms interval, auto-reload
-  // 1,000,000 Hz = 1MHz frequency (provides a 1μs tick resolution)
-  this->timer_ = timerBegin(1000000); 
-  
-  // The older edge-trigger boolean parameter is removed
-  timerAttachInterrupt(this->timer_, &timer_callback); 
-  
-  // timerAlarmWrite and timerAlarmEnable are now combined into timerAlarm
-  // 100,000 ticks at 1MHz = 100ms interval. true = auto-reload. 0 = unlimited count
-  timerAlarm(this->timer_, 100000, true, 0); 
-
-  //timerAlarmEnable(this->timer_);
-  ESP_LOGD(TAG, "ESP32 hardware timer configured");
-#elif defined(USE_ESP8266)
-  // Setup ESP8266 ticker timer
-  this->ticker_.attach_ms(100, +[](DCF77Emitter* emitter){ emitter->dcf_out_tick(); }, this);
-  ESP_LOGD(TAG, "ESP8266 ticker timer configured");
-#endif
+  ESP_LOGD(TAG, "Using ESPHome scheduler");
 }
 
 void DCF77Emitter::setup() {
@@ -57,11 +22,20 @@ void DCF77Emitter::setup() {
   
   // Configure PWM for the DCF77 signal (77.5 kHz)
 #ifdef USE_ESP32
-  // Attaches the GPIO pin directly, specifying frequency (77.5 kHz) and resolution (8-bit)
-  ledcAttach(this->antenna_pin_->get_pin(), 77500, 8);
-  
-  // Core 3.0+ Fix: Pass the GPIO pin number instead of the old channel ID
-  ledcWrite(this->antenna_pin_->get_pin(), 0);
+  auto pin = this->antenna_pin_->get_pin();
+
+    ESP_LOGE(TAG, "BEFORE LEDC ATTACH");
+    
+    bool result = ledcAttach(pin, 77500, 8);
+    
+    ESP_LOGE(TAG, "LEDC RESULT = %d", result);
+    
+    if (result) {
+        ESP_LOGE(TAG, "LEDC OK");
+    } else {
+        ESP_LOGE(TAG, "LEDC FAILED");
+    }
+  ledcWrite(pin, 0);
 #elif defined(USE_ESP8266)
   analogWriteFreq(77500);  // ESP8266 can't precisely do 77.5kHz but will get close
   analogWrite(this->antenna_pin_->get_pin(), 0);
@@ -78,22 +52,21 @@ void DCF77Emitter::setup() {
   }
 
 #ifdef USE_ESP32
-  // Safe Core 3.0+ Initial Sync: Use yield/delay to feed the hardware Watchdog
+  // For more precise initial synchronization
   int sync_count = 0;
   int start_second = time.second;
   
-  while (sync_count < 1000) { 
+  // More aggressive sync for startup only (safe because it's just once)
+  while (sync_count < 1000) { // Safety limit
     sync_count++;
     time = this->time_id_->now();
-    if (!time.is_valid()) {
-      delay(1); // Feeds the watchdog if time object isn't ready yet
-      continue;
-    }
+    if (!time.is_valid()) continue;
     if (time.second != start_second) {
+      // Exact second boundary detected!
       ESP_LOGI(TAG, "Precise second boundary detected after %d checks", sync_count);
       break;
     }
-    delay(1); // Standard 1ms delay allows the background SDK tasks to process safely
+    delayMicroseconds(500); // Much shorter delay for more precise detection
   }
 #endif
   
@@ -102,12 +75,8 @@ void DCF77Emitter::setup() {
   this->timing_drift_ms_ = 0;
   this->last_sync_millis_ = millis();
   
-  // CRUCIAL: Fire up your hardware clock timer as the final initialization step
-  this->setup_timer_();
-  
   ESP_LOGI(TAG, "DCF77 Emitter setup complete. Waiting for sync.");
 }
-
 
 void DCF77Emitter::loop() {
   // Handle sync switch state changes
@@ -133,9 +102,7 @@ void DCF77Emitter::loop() {
     
     // Check if the second has changed - this indicates we're at a second boundary
     if (current_time.second != this->last_second_) {
-      //ESP_LOGI(TAG, "Second transition detected after %u ms", millis() - this->sync_start_millis_);
-      ESP_LOGI(TAG, "Second transition detected after %lu ms", (unsigned long)(millis() - this->sync_start_millis_));
-
+      ESP_LOGI(TAG, "Second transition detected after %u ms", millis() - this->sync_start_millis_);
       
       // Initialize impulse array and start scheduling ticks
       code_time_();
@@ -195,67 +162,15 @@ void DCF77Emitter::loop() {
 
 // Update the schedule_next_tick_ method to include timing resilience
 void DCF77Emitter::schedule_next_tick_() {
-  uint32_t now = millis();
-  
-  // Calculate timing drift if this isn't the first tick
-  if (this->last_tick_time_ > 0) {
-    uint32_t elapsed = now - this->last_tick_time_;
-    int32_t drift = elapsed - 100; // How far from ideal 100ms are we?
-    
-    // Accumulate drift, but only if it's within reasonable bounds (-50 to +50ms)
-    if (abs(drift) < 50) {
-      this->timing_drift_ms_ += drift;
-    } else {
-      // Log significant timing issues
-      //ESP_LOGW(TAG, "Abnormal timing drift detected: %dms", drift);
-      ESP_LOGW(TAG, "Abnormal timing drift detected: %ldms", (long)drift);
-    }
-  }
-  
-  // Record this tick time for next calculation
-  this->last_tick_time_ = now;
   
   // Calculate next tick interval, compensating for accumulated drift
-  int32_t next_interval = 100;
-  
-  // Apply drift compensation if needed
-  if (abs(this->timing_drift_ms_) > 5) {
-    // Limit correction to reasonable bounds (70-130ms)
-    //int32_t correction = min(max(this->timing_drift_ms_, -30), 30);
-    int32_t correction = std::min(std::max(this->timing_drift_ms_, (int32_t)-30), (int32_t)30);
-    next_interval -= correction;
-    this->timing_drift_ms_ -= correction;
-    
-    this->consecutive_drift_corrections_++;
-    if (this->consecutive_drift_corrections_ % 10 == 0) {
-      //ESP_LOGD(TAG, "Drift compensation: %dms correction, %dms remaining drift", 
-      //        correction, this->timing_drift_ms_);
-      ESP_LOGD(TAG, "Drift compensation: %ldms correction, %dms remaining drift", 
-         correction, (long)correction and (long)this->timing_drift_ms_);
-    }
-  } else {
-    this->consecutive_drift_corrections_ = 0;
-  }
-  
-  // Force resynchronization every 10 minutes or if drift is severe
-  if ((now - this->last_sync_millis_ > 600000) || (abs(this->timing_drift_ms_) > 100)) {
-    ESP_LOGI(TAG, "Performing periodic resynchronization with second boundary");
-    this->is_initialized_ = false;  // This will trigger resync in loop()
-    this->timing_drift_ms_ = 0;
-    this->last_sync_millis_ = now;
-    this->sync_start_millis_ = now;
-    return; // Skip scheduling next tick, it will happen after resync
-  }
-  
-  // Schedule next tick with the calculated interval
-  App.scheduler.set_timeout(this, "dcf77_tick", next_interval, [this]() {
-    this->dcf_out_tick();
-    
-    // Only reschedule if we're still initialized
-    if (this->is_initialized_) {
-      schedule_next_tick_();
-    }
-  });
+    App.scheduler.set_interval(
+        this,
+        "dcf77_tick",
+        100,
+        [this]() {
+          this->dcf_out_tick();
+        });
 }
 
 void DCF77Emitter::dcf_out_tick() {
@@ -290,6 +205,12 @@ void DCF77Emitter::dcf_out_tick() {
 }
 
 void DCF77Emitter::generate_signal_(int current_sec) {
+    
+//    ESP_LOGD(TAG,
+//             "SEC=%d BIT=%d",
+//             current_sec,
+//             impulse_array_[current_sec]);
+    
   switch (this->impulse_count_++) {
     case 0:
       // First 100ms: turn off carrier for pulse (except for second 59)
@@ -337,10 +258,10 @@ void DCF77Emitter::generate_signal_(int current_sec) {
 void DCF77Emitter::setup_carrier_() {
   if (this->carrier_enabled_)
     return;
-    
+//ESP_LOGD(TAG, "Carrier ON");    
 #ifdef USE_ESP32
   // Use exactly 50% duty cycle like in Arduino implementation
-  ledcWrite(this->pwm_channel_, 127);
+    ledcWrite(this->antenna_pin_->get_pin(), 127);
 #elif defined(USE_ESP8266)
   analogWrite(this->antenna_pin_->get_pin(), 127);
 #endif
@@ -350,9 +271,9 @@ void DCF77Emitter::setup_carrier_() {
 void DCF77Emitter::stop_carrier_() {
   if (!this->carrier_enabled_)
     return;
-    
+//ESP_LOGD(TAG, "Carrier OFF");
 #ifdef USE_ESP32
-  ledcWrite(this->pwm_channel_, 0);
+    ledcWrite(this->antenna_pin_->get_pin(), 0);
 #elif defined(USE_ESP8266)
   analogWrite(this->antenna_pin_->get_pin(), 0);
 #endif
@@ -376,105 +297,208 @@ int DCF77Emitter::bin2bcd_(int dato) {
 
 void DCF77Emitter::code_time_() {
   auto time = this->time_id_->now();
+
   if (!time.is_valid())
     return;
-  
-  // Get time components exactly like in radio_cron_dcf77.ino
-  this->day_of_week_ = time.day_of_week;
-  if (this->day_of_week_ == 0) this->day_of_week_ = 7;  // DCF77 format: 1=Mon, 7=Sun
-  
-  this->actual_day_ = time.day_of_month;
-  this->actual_month_ = time.month;
-  this->actual_year_ = time.year % 100;  // use 2-digit year
-  this->actual_hours_ = time.hour;
-  
-  // DCF77 transmits time for the next minute
-  this->actual_minutes_ = time.minute + 1;
-  if (this->actual_minutes_ >= 60) {
-    this->actual_minutes_ = 0;
-    this->actual_hours_++;
-    if (this->actual_hours_ >= 24) {
-      this->actual_hours_ = 0;
-    }
-  }
-  
-  this->actual_second_ = time.second;
-  if (this->actual_second_ == 60) this->actual_second_ = 0;
 
-  // Generate DCF77 signal bits - identical to radio_cron_dcf77.ino
+  // DCF77 transmits the date/time of the NEXT minute.
+  // timestamp + 60 correctly handles:
+  // - minute/hour rollover
+  // - midnight
+  // - month rollover
+  // - year rollover
+  // - leap days
+  auto next_time =
+      esphome::ESPTime::from_epoch_local(time.timestamp + 60);
+
+  this->actual_day_ = next_time.day_of_month;
+  this->actual_month_ = next_time.month;
+  this->actual_year_ = next_time.year % 100;
+  this->actual_hours_ = next_time.hour;
+  this->actual_minutes_ = next_time.minute;
+
+  // ESPHome:
+  // Sunday=1, Monday=2 ... Saturday=7
+  //
+  // DCF77:
+  // Monday=1 ... Saturday=6, Sunday=7
+  this->day_of_week_ = ((next_time.day_of_week + 5) % 7) + 1;
+
+  this->actual_second_ = time.second;
+  if (this->actual_second_ >= 60)
+    this->actual_second_ = 0;
+
+  // Generate DCF77 signal bits
   int n, Tmp, TmpIn;
   int ParityCount = 0;
 
-  // First 20 seconds – logical "0" (100 ms pulse)
+  // ---------------------------------------------------------
+  // Bits 0..19
+  // ---------------------------------------------------------
+
+  // Default to logical 0 (100 ms carrier reduction)
   for (n = 0; n < 20; n++) {
     this->impulse_array_[n] = 1;
   }
 
-  // Set bits for DST
-  if (!time.is_dst) {
-    this->impulse_array_[18] = 2;  // 200 ms pulse – DST OFF
+  // ---------------------------------------------------------
+  // DST / timezone bits
+  //
+  // Bit 17 = Z1
+  // Bit 18 = Z2
+  //
+  // Summer time (CEST):
+  // Z1 = 1, Z2 = 0
+  //
+  // Standard time (CET):
+  // Z1 = 0, Z2 = 1
+  // ---------------------------------------------------------
+
+  if (time.is_dst) {
+    // CEST
+    this->impulse_array_[17] = 2;
+    this->impulse_array_[18] = 1;
   } else {
-    this->impulse_array_[17] = 2;  // 200 ms pulse – DST ON
+    // CET
+    this->impulse_array_[17] = 1;
+    this->impulse_array_[18] = 2;
   }
 
-  // Bit 20 – active time indicator
+  // ---------------------------------------------------------
+  // Bit 20 - Start of encoded time information
+  // ---------------------------------------------------------
+
   this->impulse_array_[20] = 2;
 
-  // Form bits for minutes (bits 21..27) and parity bit (28)
+  // ---------------------------------------------------------
+  // Minutes - bits 21..27
+  // Parity - bit 28
+  // ---------------------------------------------------------
+
   ParityCount = 0;
+
   TmpIn = bin2bcd_(this->actual_minutes_);
+
   for (n = 21; n < 28; n++) {
     Tmp = TmpIn & 1;
+
     this->impulse_array_[n] = Tmp + 1;
+
     ParityCount += Tmp;
+
     TmpIn >>= 1;
   }
-  this->impulse_array_[28] = ((ParityCount & 1) == 0) ? 1 : 2;
 
-  // Form bits for hours (bits 29..34) and parity bit (35)
+  // Even parity
+  this->impulse_array_[28] =
+      ((ParityCount & 1) == 0) ? 1 : 2;
+
+  // ---------------------------------------------------------
+  // Hours - bits 29..34
+  // Parity - bit 35
+  // ---------------------------------------------------------
+
   ParityCount = 0;
+
   TmpIn = bin2bcd_(this->actual_hours_);
+
   for (n = 29; n < 35; n++) {
     Tmp = TmpIn & 1;
+
     this->impulse_array_[n] = Tmp + 1;
+
     ParityCount += Tmp;
+
     TmpIn >>= 1;
   }
-  this->impulse_array_[35] = ((ParityCount & 1) == 0) ? 1 : 2;
 
-  // Form bits for the date: day, day of the week, month, year, and the parity bit (58)
+  // Even parity
+  this->impulse_array_[35] =
+      ((ParityCount & 1) == 0) ? 1 : 2;
+
+  // ---------------------------------------------------------
+  // Date
+  // ---------------------------------------------------------
+
   ParityCount = 0;
+
+  // ---------------------------------------------------------
+  // Day of month - bits 36..41
+  // ---------------------------------------------------------
+
   TmpIn = bin2bcd_(this->actual_day_);
+
   for (n = 36; n < 42; n++) {
     Tmp = TmpIn & 1;
+
     this->impulse_array_[n] = Tmp + 1;
+
     ParityCount += Tmp;
+
     TmpIn >>= 1;
   }
+
+  // ---------------------------------------------------------
+  // Day of week - bits 42..44
+  // ---------------------------------------------------------
+
   TmpIn = bin2bcd_(this->day_of_week_);
+
   for (n = 42; n < 45; n++) {
     Tmp = TmpIn & 1;
+
     this->impulse_array_[n] = Tmp + 1;
+
     ParityCount += Tmp;
+
     TmpIn >>= 1;
   }
+
+  // ---------------------------------------------------------
+  // Month - bits 45..49
+  // ---------------------------------------------------------
+
   TmpIn = bin2bcd_(this->actual_month_);
+
   for (n = 45; n < 50; n++) {
     Tmp = TmpIn & 1;
+
     this->impulse_array_[n] = Tmp + 1;
+
     ParityCount += Tmp;
+
     TmpIn >>= 1;
   }
+
+  // ---------------------------------------------------------
+  // Year - bits 50..57
+  // ---------------------------------------------------------
+
   TmpIn = bin2bcd_(this->actual_year_);
+
   for (n = 50; n < 58; n++) {
     Tmp = TmpIn & 1;
+
     this->impulse_array_[n] = Tmp + 1;
+
     ParityCount += Tmp;
+
     TmpIn >>= 1;
   }
-  this->impulse_array_[58] = ((ParityCount & 1) == 0) ? 1 : 2;
 
-  // The last second – no pulse
+  // ---------------------------------------------------------
+  // Date parity - bit 58
+  // ---------------------------------------------------------
+
+  this->impulse_array_[58] =
+      ((ParityCount & 1) == 0) ? 1 : 2;
+
+  // ---------------------------------------------------------
+  // Second 59
+  //
+  // No carrier reduction = DCF77 minute marker
+  // ---------------------------------------------------------
+
   this->impulse_array_[59] = 0;
 }
 
