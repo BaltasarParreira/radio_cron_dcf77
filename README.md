@@ -107,7 +107,7 @@ switch:
     restore_mode: ALWAYS_OFF
 ```
 
-Just create on you local esphome folder a new sunfolder named "my_components" or whatever name you want as long you change to that exact same name on the "external_components:" tag.
+Just create on you local esphome folder a new subfolder named "my_components" or whatever name you want as long you change to that exact same name on the "external_components:" tag.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------
 
