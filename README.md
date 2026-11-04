@@ -108,6 +108,7 @@ switch:
 ```
 
 Just create on you local esphome folder a new subfolder named "my_components" or whatever name you want as long you change to that exact same name on the "external_components:" tag.
+
 Put the folder according to the version you choose with the 3 files inside that subfolder, example for ESP-IDF framework:
 
 ```yaml
